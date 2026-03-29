@@ -1,0 +1,236 @@
+---
+id: kinozal-tv-anime
+name: kinozal-tv-anime
+description: "Kinozal ANIME"
+language: ru-RU
+type: semi-private
+encoding: windows-1251
+links:
+  - https://kinozal.tv/
+  - https://kinozal.guru/
+legacylinks:
+  - https://kinozal-tv.appspot.com/
+  - http://kinozal.tv/
+  - https://kinozal-guru.appspot.com/
+
+caps:
+  categorymappings:
+    - {id: 20, cat: TV/Anime, desc: "Cartoons - Anime"}
+
+  modes:
+    search: [q]
+    tv-search: [q, season, ep]
+    movie-search: [q]
+
+settings:
+  - name: username
+    type: text
+    label: Username
+  - name: password
+    type: password
+    label: Password
+  - name: freeleech
+    type: checkbox
+    label: Search freeleech only
+    default: false
+  - name: sort
+    type: select
+    label: Sort requested from site
+    default: 0
+    options:
+      0: created
+      1: seeders
+      3: size
+  - name: type
+    type: select
+    label: Order requested from site
+    default: 0
+    options:
+      0: desc
+      1: asc
+  - name: info_torrent
+    type: info
+    label: Torrents
+    default: "This tracker limits the number of torrents a user can download each day without paying. This indexer uses <b>torrent files</b> with the user's passkey, so any download/upload is recorded. If you receive errors when downloading torrent files, you may have reached this limit. To bypass the limit with magnet links, use <b>Kinozal (M)</b>."
+
+login:
+  path: takelogin.php
+  method: post
+  inputs:
+    username: "{{ .Config.username }}"
+    password: "{{ .Config.password }}"
+  error:
+    - selector: div.bx1:has(div.red)
+      message:
+        selector: div.bx1 div.red
+  test:
+    path: my.php
+    selector: a[href*="logout.php?hash4u="]
+
+search:
+  paths:
+    # http://kinozal.tv/browse.php?s=lucifer+2017&g=0&c=0&v=0&d=0&w=0&t=0&f=0
+    - path: browse.php
+      # required for the appspot domain.
+      followredirect: true
+  keywordsfilters:
+#    - name: diacritics # 8686
+#      args: replace
+    - name: re_replace
+      args: ['(?i)\bS0*(\d+)E0*(\d+)\b', '']
+    - name: re_replace # S01 to 1
+      args: ['(?i)\bS0*(\d+)\b', '']
+    - name: re_replace # S01E01 to 1 1
+      args: ['\s{2,}', ' ']
+  inputs:
+    c: 20
+    s: "{{ .Keywords }}"
+    # where 0 title, 1 person, 2 genres, 3 regular expression
+    g: 0
+    # format 0 all
+    v: 0
+    # released 0 all
+    d: 0
+    # filter 0 all, 1 today, 2 yesterday, 3 in 3 days, 4 this week, 5 per month, 6-10 size rages, 11 gold, 12 silver
+    w: "{{ if .Config.freeleech }}11{{ else }}0{{ end }}"
+    t: "{{ .Config.sort }}"
+    f: "{{ .Config.type }}"
+
+  rows:
+    selector: table > tbody > tr:has(td.bt)
+
+  fields:
+    title:
+      selector: td.nam a[href^="/details.php?"]
+      filters:
+        # 1. МАСТЕР-ФИЛЬТР
+        # Захватываем "Часть/Части", диапазон лет и общее кол-во серий (epMax)
+        - name: re_replace
+          args:
+            - '^(?<rus>[^/]+?)\s*(?:\(\s*(?:(?<season>\d+)(?:-(?<seasonTo>\d+))?\s*\u0441\u0435\u0437\u043E\u043D[\u044B\u0430]?)?(?:[^)]*?(?<isPart>[\u0427\u0447]\u0430\u0441\u0442[\u0438\u044C\u0438])\s*(?<part>\d+(?:-\d+)?))?(?:[^)]*?(?<epFrom>\d+)(?:-(?<epTo>\d+))?\s*\u0441\u0435\u0440\u0438(?:[^)]*?\u0438\u0437\s+(?<epMax>\d+))?)?[^)]*\)\s*)?/\s*(?<romaji>[^/]+?)\s*/\s*(?<year>\d{4}(?:-\d{4})?)\s*/\s*(?<audioFeat>.*?)\s*(?:/\s*(?<quality>[^/()]+?)(?:\s*\((?<res>\d+p|4K|2K|8K|\d{3,4}[pi]|AVC|HEVC)\)\s*)?)?$'
+            #- '${romaji} [P:${part}] [HASPART:${isPart}] (${year}) S0${season}-S0${seasonTo} E--${epFrom}-${epTo}-MAX${epMax} [${quality}-${res}] [${audioFeat}] -Kinozal'
+            - '${romaji} [HASPART:${isPart}] S0${season}-S0${seasonTo} E--${epFrom}-${epTo}-MAX${epMax} [${quality}-${res}] [${audioFeat}] -Kinozal'
+
+        # 2. ПРЕД-ОБРАБОТКА ЭПИЗОДОВ
+        # Фикс одиночного числа (12 серий -> 1-12)
+        - name: re_replace
+          args: [ 'E--(\d+)--MAX(\d+)', 'E--1-$1-MAX$2' ]
+        - name: re_replace
+          args: [ 'E--(\d+)-MAX(?!\d)', 'E--1-$1' ]
+
+        # 3. УДАЛЕНИЕ ЭПИЗОДОВ ДЛЯ SEASON PACK
+        # УСЛОВИЕ: Удаляем ТОЛЬКО если маркер [HASPART:] пустой.
+        # Если в релизе есть слово "Часть" или "Части", этот шаг будет пропущен.
+        - name: re_replace
+          args: [ '\[HASPART:\]\s+(.*?)\s+E--1-(\d+)-MAX\2(?=\s|\[|$)', '$1' ]
+
+        # Чистим временные маркеры
+        - name: re_replace
+          args: [ '-MAX\d*', '' ]
+        - name: re_replace
+          args: [ '\[HASPART:.*?\]\s*', '' ]
+
+        # 4. ПОСТ-ОБРАБОТКА СЕЗОНОВ И ЭПИЗОДОВ
+        - name: re_replace
+          args: [ 'S0(\d+)-S0(?=[E\s\[]|$)', 'S0$1' ]
+        - name: re_replace
+          args: [ '\bS0-S0\b', '' ]
+        - name: re_replace
+          args: [ 'S0(\d{2,})', 'S$1' ]
+
+        # Форматируем эпизоды: E--1-24 -> E01-24
+        - name: re_replace
+          args: [ 'E--(\d+)-(\d+)', 'E$1-$2' ]
+        - name: re_replace
+          args: [ 'E--', 'E' ]
+        - name: re_replace
+          args: [ 'E(\d)(?=-|\b|\s)', 'E0$1' ]
+        - name: re_replace
+          args: [ '(?<=E\d{2}-)(\d)\b', '0$1' ]
+        - name: re_replace
+          args: [ '\bE-+(?!\d)\s*', '' ]
+
+        # 5. ОФОРМЛЕНИЕ PART ПЕРЕД ГОДОМ
+        #- name: re_replace
+        #  args: [ '\[P:(\d+(?:-\d+)?)\]', 'Part $1' ]
+        #- name: re_replace
+        #  args: [ '\[P:\]\s*', '' ]
+
+        # Показываем год только для S01
+        #- name: re_replace
+        #  args: [ '\((\d{4}(?:-\d{4})?)\)(?!\s*S01\b)', '' ]
+
+        # 6. ФИНАЛЬНАЯ ОЧИСТКА
+        - name: re_replace
+          args: [ '\s{2,}', ' ' ]
+        - name: trim
+
+    details:
+      selector: td.nam a[href^="/details.php?"]
+      attribute: href
+    category:
+      selector: td.bt img
+      attribute: onclick
+      filters:
+        - name: re_replace
+          args: ["[^\\d+]", ""]
+    download:
+      selector: td.nam a[href^="/details.php?"]
+      attribute: href
+      filters:
+        - name: replace
+          args: ["details", "download"]
+    size:
+      selector: td:nth-child(4)
+      filters:
+        - name: replace
+          args: ["\u0422\u0411", "TB"]
+        - name: replace
+          args: ["\u0413\u0411", "GB"]
+        - name: replace
+          args: ["\u041C\u0411", "MB"]
+        - name: replace
+          args: ["\u041A\u0411", "KB"]
+    seeders:
+      selector: td:nth-child(5)
+    leechers:
+      selector: td:nth-child(6)
+    # dates come in four flavours:
+    date_day:
+      # now
+      # Today 09:10
+      # Yesterday 13:04
+      selector: td:nth-child(7):not(:contains("."))
+      # auto adjusted by site account profile
+      optional: true
+      filters:
+        - name: replace
+          args: ["\u0432 ", ""]
+        - name: replace
+          args: ["\u0441\u0435\u0439\u0447\u0430\u0441", "now"]
+        - name: replace
+          args: ["\u0441\u0435\u0433\u043E\u0434\u043D\u044F", "Today"]
+        - name: replace
+          args: ["\u0432\u0447\u0435\u0440\u0430", "Yesterday"]
+    date_year:
+      # 24.10.2017 at 23:44
+      selector: td:nth-child(7):contains(".")
+      # auto adjusted by site account profile
+      optional: true
+      filters:
+        - name: replace
+          args: ["\u0432 ", ""]
+        - name: dateparse
+          args: "dd.MM.yyyy HH:mm"
+    date:
+      text: "{{ if or .Result.date_day .Result.date_year }}{{ or .Result.date_day .Result.date_year }}{{ else }}now{{ end }}"
+    downloadvolumefactor:
+      case:
+        a.r1: 0 # gold
+        a.r2: 0.5 # silver
+        "*": 1
+    uploadvolumefactor:
+      text: 1
+    minimumratio:
+      text: 1.0
+# engine n/a
