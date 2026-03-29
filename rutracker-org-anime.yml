@@ -60,9 +60,9 @@ search:
     - name: diacritics
       args: replace
     - name: re_replace
-      args: ["(?i)\\bS0*(\\d+)\\b", "сезон $1"]
+      args: ["(?i)\\bS0*(\\d+)\\b", ""]
     - name: re_replace
-      args: ["(?i)\\bS0*(\\d+)E0*(\\d+)\\b", "сезон $1 серия $2"]
+      args: ["(?i)\\bS0*(\\d+)E0*(\\d+)\\b", ""]
 
   inputs:
     f: '{{ join .Categories "," }}'
@@ -90,8 +90,32 @@ search:
         # 1. МАСТЕР-ФИЛЬТР
         - name: re_replace
           args:
-            - '^(?<rus>(?:(?!\s*\((?:\u0422\u0412|TV|\u0421\u0435\u0437\u043E\u043D|Season)\s*-?\s*\d+)[^/])*?)(?:\s*\((?:\u0422\u0412|TV|\u0421\u0435\u0437\u043E\u043D|Season)\s*-?\s*(?<season>\d+)[^)]*\))?\s*/\s*(?<romaji>(?:(?!\s+/\s+|\s*\[)[^\[])*?)(?:\s+/\s+[^\[]*?)*\s*\[(?<type>[^\]]+)\](?=(?:(?:(?!\[\d{4}(?:-\d{4})?(?:,|\])))[\s\S])*?\[(?!\d{4}(?:-\d{4})?(?:,|\]))[^\]]*?(?<eps>\d+(?:-\d+)?)[^\]]*\])?(?=(?:(?:(?!\[\d{4}(?:-\d{4})?(?:,|\])))[\s\S])*?\[(?<audio>[^\]]*?(?:RUS|JAP|ENG|Sub|Dub|\u043E\u0437\u0432\u0443\u0447\u043A\u0430)[^\]]*?)\])?(?=(?:(?:(?!\[\d{4}(?:-\d{4})?(?:,|\])))[\s\S])*?\[(?<hardsub>[^\]]*?\u0445\u0430\u0440\u0434\u0441\u0430\u0431[^\]]*?)\])?.*?\[(?<year>\d{4})(?:-\d{4})?(?=[^\]]*\])(?:(?=[^\]]*?(?<quality>BDRemux|BDRip|WEB-DLRip|WEBRip|WEB-DL|HDTVRip|HDRemux|HDTV|TVRip|DVD|UHD\s*BDRip|UHD\s*BDRemux)))?(?:(?=[^\]]*?(?<hdr>HDR10\+|HDR10|Dolby\s*Vision|HLG|HDR)))?[^\]]*\](?:\s*\[(?<res>\d+p)\])?(?<tail>.*)$'
-            - '${romaji} S0${season} E--${eps} (${year}) [${quality} ${res}] [${hdr}] [${audio}] [${hardsub}] ${tail} -RuTracker'
+            - '^(?<rus>(?:(?!\s*\((?:\u0422\u0412|TV|\u0421\u0435\u0437\u043E\u043D|Season)\s*-?\s*\d+)[^/])*?)(?:\s*\((?:\u0422\u0412|TV|\u0421\u0435\u0437\u043E\u043D|Season)\s*-?\s*(?<season>\d+)(?<part>(?:,\s*(?:[\u0427\u0447]\u0430\u0441\u0442\u044C|[Pp]art|[Cc]our)\s*\d+)?)[^)]*\))?\s*/\s*(?<romaji>(?:(?!\s+/\s+|\s*\[)[^\[])*?)(?<alt>(?:\s+/\s+[^\[]*?)*)\s*\[(?<type>[^\]]+)\](?=(?:(?:(?!\[\d{4}(?:-\d{4})?(?:,|\])))[\s\S])*?\[(?!\d{4}(?:-\d{4})?(?:,|\]))[^\]]*?(?<eps>\d+(?:-\d+)?)[^\]]*\])?(?=(?:(?:(?!\[\d{4}(?:-\d{4})?(?:,|\])))[\s\S])*?\[(?<audio>[^\]]*?(?:RUS|JAP|ENG|Sub|Dub|\u043E\u0437\u0432\u0443\u0447\u043A\u0430)[^\]]*?)\])?(?=(?:(?:(?!\[\d{4}(?:-\d{4})?(?:,|\])))[\s\S])*?\[(?<hardsub>[^\]]*?\u0445\u0430\u0440\u0434\u0441\u0430\u0431[^\]]*?)\])?.*?\[(?<year>\d{4})(?:-\d{4})?(?=[^\]]*\])(?:(?=[^\]]*?(?<quality>BDRemux|BDRip|WEB-DLRip|WEBRip|WEB-DL|HDTVRip|HDRemux|HDTV|TVRip|DVD|UHD\s*BDRip|UHD\s*BDRemux)))?(?:(?=[^\]]*?(?<hdr>HDR10\+|HDR10|Dolby\s*Vision|HLG|HDR)))?[^\]]*\](?:\s*\[(?<res>\d+p)\])?(?<tail>.*)$'
+            - '${romaji}${part} S0${season} E--${eps} (${year}) [${type}] [${quality} ${res}] [${hdr}] [${audio}] [${hardsub}] ${tail} -RuTracker (${alt})'
+
+        # 1.1. Убираем повисший слеш в начале круглых скобок с мусором: "( / " -> "("
+        - name: re_replace
+          args: [ '\(\s*/\s*', '(' ]
+
+        # 1.2. Если дополнительных названий не было, удаляем пустые скобки "()"
+        - name: re_replace
+          args: [ '\(\s*\)', '' ]
+
+        # 1.3. Удаляем любой мусор на кириллице из круглых скобок в конце строки
+        - name: re_replace
+          args: [ '\([^)]*\p{IsCyrillic}[^)]*\)', '' ]
+
+        # 1.4. Переводим "часть 2" в формат " - Part 2"
+        - name: re_replace
+          args: [ '(?i),\s*(?:[\u0427\u0447]\u0430\u0441\u0442\u044C|part|cour)\s*(\d+)', ' - Part $1' ]
+
+        # 1.5. Удаление задвоенных Part X, если они уже были в оригинальном названии
+        - name: re_replace
+          args: [ '(?i)(Part\s*\d+)(?:\s*-\s*\1|\s+\1)', '$1' ]
+
+        # 1.5.1. Sonarr не понимает "Part 1" (для него это просто базовый тайтл). Незаметно стираем его.
+        - name: re_replace
+          args: [ '(?i)\s*-\s*Part\s*1\b', '' ]
 
         # 2. Очистка висячих пробелов внутри скобок (например, если нет качества: "[ 1080p]" -> "[1080p]")
         - name: re_replace
@@ -124,13 +148,25 @@ search:
         - name: re_replace
           args: [ 'E--(\d+)', 'E01-$1' ]
 
+        # 8.5. Нормализуем левую часть диапазона: E1-2 -> E01-2
+        - name: re_replace
+          args: [ 'E(\d)(?=-\d\b)', 'E0$1' ]
+
+        # 8.6. Нормализуем правую часть диапазона: E01-2 -> E01-02
+        - name: re_replace
+          args: [ '(?<=E\d{2}-)(\d)\b', '0$1' ]
+
         # 9. Удаление пустых E-- (для Movie/OVA)
         - name: re_replace
           args: [ '\s*E--\s*', ' ' ]
 
-        # 10. БЕЗОПАСНАЯ СТРАХОВКА: Если нет буквы S, но есть эпизоды, добавляем S01
+        # 10.1. УМНАЯ СТРАХОВКА (Specials): Если нет сезона, но это OVA/Фильм/Спешл (и это НЕ "TV+..."), ставим S00
         - name: re_replace
-          args: [ '^(?!.*S\d+)(.*?)\s+(E\d+)', '$1 S01$2' ]
+          args: [ '^(?i)(?!.*S\d+)(?!.*?(?:TV|\u0422\u0412)\s*\+)(?=.*?(?:OVA|OAD|Special|\u0421\u043F\u0435\u0448\u043B|Movie|\u0424\u0438\u043B\u044C\u043C|SP\b))(.+?)\s+(E\d+)', '$1 S00$2' ]
+
+        # 10.2. БЕЗОПАСНАЯ СТРАХОВКА (TV): Если нет сезона и это не спешл, ставим S01 (для обычного ТВ)
+        - name: re_replace
+          args: [ '^(?!.*S\d+)(.+?)\s+(E\d+)', '$1 S01$2' ]
 
         # 11. Склеиваем сезон и эпизод: S02 E01-12 -> S02E01-12
         - name: re_replace
@@ -173,18 +209,19 @@ search:
 
 caps:
   categorymappings:
-    - { id: 33, cat: TV/Anime, desc: "Аниме" }
-    - { id: 1106, cat: TV/Anime, desc: "Онгоинги (HD Video)" }
-    - { id: 1105, cat: TV/Anime, desc: "Аниме (HD Video)" }
-    - { id: 599, cat: TV/Anime, desc: "Аниме (DVD)" }
-    - { id: 1389, cat: TV/Anime, desc: "Аниме (основной подраздел)" }
-    - { id: 1391, cat: TV/Anime, desc: "Аниме (плеерный подраздел)" }
-    - { id: 2491, cat: TV/Anime, desc: "Аниме (QC подраздел)" }
-    - { id: 2544, cat: TV/Anime, desc: "Ван-Пис" }
-    - { id: 1642, cat: TV/Anime, desc: "Гандам" }
-    - { id: 1390, cat: TV/Anime, desc: "Наруто" }
-    - { id: 404, cat: TV/Anime, desc: "Покемоны" }
-    - { id: 893, cat: TV/Anime, desc: "Японские мультфильмы" }
+    - { id: 33, cat: TV/Anime, desc: "Anime" }
+    - { id: 1106, cat: TV/Anime, desc: "Ongoings (HD Video)" }
+    - { id: 1105, cat: TV/Anime, desc: "Anime (HD Video)" }
+    - { id: 599, cat: TV/Anime, desc: "Anime (DVD)" }
+    - { id: 1389, cat: TV/Anime, desc: "Anime (Main)" }
+    - { id: 1391, cat: TV/Anime, desc: "Anime (Player)" }
+    - { id: 2491, cat: TV/Anime, desc: "Anime (QC)" }
+    - { id: 2544, cat: TV/Anime, desc: "One Piece" }
+    - { id: 1642, cat: TV/Anime, desc: "Gundam" }
+    - { id: 1390, cat: TV/Anime, desc: "Naruto" }
+    - { id: 404, cat: TV/Anime, desc: "Pokemon" }
+    - { id: 893, cat: TV/Anime, desc: "Japanese Cartoons" }
+    - {id: 2535, cat: PC/Mobile-iOS, desc: "|- Аниме для iPod, iPhone, iPad"}
 
   modes:
     search: [q]
