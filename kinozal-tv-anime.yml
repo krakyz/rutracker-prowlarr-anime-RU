@@ -1,7 +1,7 @@
 ---
 id: kinozal-tv-anime
-name: Kinozal (Anime)
-description: "Kinozal is a RUSSIAN Semi-Private Torrent Tracker. This indexer is optimized for Anime and Sonarr."
+name: kinozal-tv-anime
+description: "Kinozal ANIME"
 language: ru-RU
 type: semi-private
 encoding: windows-1251
@@ -16,9 +16,11 @@ legacylinks:
 caps:
   categorymappings:
     - {id: 20, cat: TV/Anime, desc: "Cartoons - Anime"}
+
   modes:
     search: [q]
-    tv-search: [q]
+    tv-search: [q, season, ep]
+    movie-search: [q]
 
 settings:
   - name: username
@@ -31,6 +33,25 @@ settings:
     type: checkbox
     label: Search freeleech only
     default: false
+  - name: sort
+    type: select
+    label: Sort requested from site
+    default: 0
+    options:
+      0: created
+      1: seeders
+      3: size
+  - name: type
+    type: select
+    label: Order requested from site
+    default: 0
+    options:
+      0: desc
+      1: asc
+  - name: info_torrent
+    type: info
+    label: Torrents
+    default: "This tracker limits the number of torrents a user can download each day without paying. This indexer uses <b>torrent files</b> with the user's passkey, so any download/upload is recorded. If you receive errors when downloading torrent files, you may have reached this limit. To bypass the limit with magnet links, use <b>Kinozal (M)</b>."
 
 login:
   path: takelogin.php
@@ -48,93 +69,105 @@ login:
 
 search:
   paths:
+    # http://kinozal.tv/browse.php?s=lucifer+2017&g=0&c=0&v=0&d=0&w=0&t=0&f=0
     - path: browse.php
+      # required for the appspot domain.
       followredirect: true
   keywordsfilters:
-    - name: re_replace # Strip S01 to allow broad search
-      args: ["(?i)\\bS0*(\\d+)\\b", ""]
-    - name: re_replace # Strip S01E01 to allow broad search
-      args: ["(?i)\\bS0*(\\d+)E0*(\\d+)\\b", ""]
+#    - name: diacritics # 8686
+#      args: replace
+    - name: re_replace
+      args: ['(?i)\bS0*(\d+)E0*(\d+)\b', '']
+    - name: re_replace # S01 to 1
+      args: ['(?i)\bS0*(\d+)\b', '']
+    - name: re_replace # S01E01 to 1 1
+      args: ['\s{2,}', ' ']
   inputs:
     c: 20
     s: "{{ .Keywords }}"
+    # where 0 title, 1 person, 2 genres, 3 regular expression
     g: 0
+    # format 0 all
     v: 0
+    # released 0 all
     d: 0
+    # filter 0 all, 1 today, 2 yesterday, 3 in 3 days, 4 this week, 5 per month, 6-10 size rages, 11 gold, 12 silver
     w: "{{ if .Config.freeleech }}11{{ else }}0{{ end }}"
-    t: 0
-    f: 0
+    t: "{{ .Config.sort }}"
+    f: "{{ .Config.type }}"
 
   rows:
     selector: table > tbody > tr:has(td.bt)
+
   fields:
-    filters:
-      # 1. МАСТЕР-ФИЛЬТР (С поддержкой диапазонов лет, например 2025-2026)
-      - name: re_replace
-        args:
-          - '^(?<rus>[^/]+?)\s*(?:\(\s*(?:(?<season>\d+)\s*\u0441\u0435\u0437\u043E\u043D)?(?:[^)]*?[\u0427\u0447]\u0430\u0441\u0442\u044C\s*(?<part>\d+(?:-\d+)?))?(?:[^)]*?(?<epFrom>\d+)(?:-(?<epTo>\d+))?\s*\u0441\u0435\u0440\u0438)?[^)]*\)\s*)?/\s*(?<romaji>[^/]+?)\s*/\s*(?<year>\d{4})(?:-\d{4})?\s*/\s*(?<audioFeat>.*?)\s*/\s*(?<quality>[^/()]+?)(?:\s*\((?<res>\d+p|4K|2K|8K|\d{3,4}[pi])\))?\s*$'
-          - '${romaji} (${year}) [PART:${part}] S0${season}E--${epFrom}-${epTo} [${quality} ${res}] -Kinozal (${rus} / ${audioFeat})'
+    title:
+      selector: td.nam a[href^="/details.php?"]
+      filters:
+        # 1. МАСТЕР-ФИЛЬТР (С поддержкой диапазонов лет, например 2025-2026)
+        - name: re_replace
+          args:
+            - '^(?<rus>[^/]+?)\s*(?:\(\s*(?:(?<season>\d+)\s*\u0441\u0435\u0437\u043E\u043D)?(?:[^)]*?[\u0427\u0447]\u0430\u0441\u0442\u044C\s*(?<part>\d+(?:-\d+)?))?(?:[^)]*?(?<epFrom>\d+)(?:-(?<epTo>\d+))?\s*\u0441\u0435\u0440\u0438)?[^)]*\)\s*)?/\s*(?<romaji>[^/]+?)\s*/\s*(?<year>\d{4})(?:-\d{4})?\s*/\s*(?<audioFeat>.*?)\s*/\s*(?<quality>[^/()]+?)(?:\s*\((?<res>\d+p|4K|2K|8K|\d{3,4}[pi])\))?\s*$'
+            - '${romaji} (${year}) [PART:${part}] S0${season}E--${epFrom}-${epTo} [${quality} ${res}] -Kinozal (${rus} / ${audioFeat})'
 
-      # 2. Очистка несмаченных групп (если сезонов/серий не было)
-      - name: re_replace
-        args: [ '\[PART:\]', '' ]
-      - name: re_replace
-        args: [ '\s*S0E---\s*', ' ' ] # И сезон, и серии отсутствуют (Скарлет) -> стираем в пробел
-      - name: re_replace
-        args: [ '\bS0E--', 'E--' ] # Сезон отсутствует, но серии есть -> оставляем E-- для ТВ-страховки S01
-      - name: re_replace
-        args: [ 'S0(\d{2,})', 'S$1' ] # Фикс S012 -> S12
+        # 2. Очистка несмаченных групп (если сезонов/серий не было)
+        - name: re_replace
+          args: [ '\[PART:\]', '' ]
+        - name: re_replace
+          args: [ '\s*S0E---\s*', ' ' ] # И сезон, и серии отсутствуют (Скарлет) -> стираем в пробел
+        - name: re_replace
+          args: [ '\bS0E--', 'E--' ] # Сезон отсутствует, но серии есть -> оставляем E-- для ТВ-страховки S01
+        - name: re_replace
+          args: [ 'S0(\d{2,})', 'S$1' ] # Фикс S012 -> S12
 
-      # 3. Фикс пустого epTo (когда залита только 1 серия: E--1- -> E--1)
-      - name: re_replace
-        args: [ 'E--(\d+)-\s+', 'E--$1 ' ]
+        # 3. Фикс пустого epTo (когда залита только 1 серия: E--1- -> E--1)
+        - name: re_replace
+          args: [ 'E--(\d+)-\s+', 'E--$1 ' ]
 
-      # 4. Нормализация эпизодов (добиваем нули)
-      - name: re_replace
-        args: [ 'E--', 'E' ]
-      - name: re_replace
-        args: [ 'E(\d)(?=-|\b|\s)', 'E0$1' ] # E1-12 -> E01-12
-      - name: re_replace
-        args: [ '(?<=E\d{2}-)(\d)\b', '0$1' ] # E01-2 -> E01-02
+        # 4. Нормализация эпизодов (добиваем нули)
+        - name: re_replace
+          args: [ 'E--', 'E' ]
+        - name: re_replace
+          args: [ 'E(\d)(?=-|\b|\s)', 'E0$1' ] # E1-12 -> E01-12
+        - name: re_replace
+          args: [ '(?<=E\d{2}-)(\d)\b', '0$1' ] # E01-2 -> E01-02
 
-      # 5. Обработка Parts (Сплит-куров)
-      - name: re_replace
-        args: [ '\s*\[PART:\d+-\d+\]', '' ] # Уничтожаем объединенные Part 1-2
-      - name: re_replace
-        args: [ '\[PART:(\d+)\]', ' - Part $1' ]
-      - name: re_replace
-        args: [ '(?i)(Part\s*\d+)(?:\s*-\s*\1|\s+\1)', '$1' ] # Удаление дублей
-      - name: re_replace
-        args: [ '(?i)\s*-\s*Part\s*1\b', '' ] # Скрываем Part 1 для Sonarr
+        # 5. Обработка Parts (Сплит-куров)
+        - name: re_replace
+          args: [ '\s*\[PART:\d+-\d+\]', '' ] # Уничтожаем объединенные Part 1-2
+        - name: re_replace
+          args: [ '\[PART:(\d+)\]', ' - Part $1' ]
+        - name: re_replace
+          args: [ '(?i)(Part\s*\d+)(?:\s*-\s*\1|\s+\1)', '$1' ] # Удаление дублей
+        - name: re_replace
+          args: [ '(?i)\s*-\s*Part\s*1\b', '' ] # Скрываем Part 1 для Sonarr
 
-      # 6. Fallback-страховка для сезонов
-      # OVA / Movie / Specials -> S00
-      - name: re_replace
-        args: [ '^(?i)(?!.*S\d+)(?!.*?(?:TV|\u0422\u0412)\s*\+)(?=.*?(?:OVA|OAD|Special|\u0421\u043F\u0435\u0448\u043B|Movie|\u0424\u0438\u043B\u044C\u043C|SP\b))(.+?)\s+(E\d+)', '$1 S00$2' ]
-      # TV -> S01
-      - name: re_replace
-        args: [ '^(?!.*S\d+)(.+?)\s+(E\d+)', '$1 S01$2' ]
+        # 6. Fallback-страховка для сезонов
+        # OVA / Movie / Specials -> S00
+        - name: re_replace
+          args: [ '^(?i)(?!.*S\d+)(?!.*?(?:TV|\u0422\u0412)\s*\+)(?=.*?(?:OVA|OAD|Special|\u0421\u043F\u0435\u0448\u043B|Movie|\u0424\u0438\u043B\u044C\u043C|SP\b))(.+?)\s+(E\d+)', '$1 S00$2' ]
+        # TV -> S01
+        - name: re_replace
+          args: [ '^(?!.*S\d+)(.+?)\s+(E\d+)', '$1 S01$2' ]
 
-      # 7. БЕЗЖАЛОСТНАЯ ЗАЧИСТКА КИРИЛЛИЦЫ В ХВОСТЕ
-      - name: re_replace
-        args: [ '\p{IsCyrillic}+', '' ]
+        # 7. БЕЗЖАЛОСТНАЯ ЗАЧИСТКА КИРИЛЛИЦЫ В ХВОСТЕ
+        - name: re_replace
+          args: [ '\p{IsCyrillic}+', '' ]
 
-      # 8. Уборка мусорной пунктуации из хвоста после зачистки кириллицы
-      - name: re_replace
-        args: [ '\(\s*[/,-]+\s*', '(' ]
-      - name: re_replace
-        args: [ '\s*[/,-]+\s*\)', ')' ]
-      - name: re_replace
-        args: [ '\s+[/,-]+\s+', ' ' ]
-      - name: re_replace
-        args: [ '\(\s*\)', '' ] # Стираем пустые скобки
-      - name: re_replace
-        args: [ '\[\s+\]', '' ]
-      - name: re_replace
-        args: [ '\s{2,}', ' ' ]
+        # 8. Уборка мусорной пунктуации из хвоста после зачистки кириллицы
+        - name: re_replace
+          args: [ '\(\s*[/,-]+\s*', '(' ]
+        - name: re_replace
+          args: [ '\s*[/,-]+\s*\)', ')' ]
+        - name: re_replace
+          args: [ '\s+[/,-]+\s+', ' ' ]
+        - name: re_replace
+          args: [ '\(\s*\)', '' ] # Стираем пустые скобки
+        - name: re_replace
+          args: [ '\[\s+\]', '' ]
+        - name: re_replace
+          args: [ '\s{2,}', ' ' ]
 
-      - name: trim
-
+        - name: trim
     details:
       selector: td.nam a[href^="/details.php?"]
       attribute: href
@@ -153,38 +186,43 @@ search:
     size:
       selector: td:nth-child(4)
       filters:
-        # Unicode-реплейс кириллицы (ТБ, ГБ, МБ, КБ)
-        - name: re_replace
+        - name: replace
           args: ["\u0422\u0411", "TB"]
-        - name: re_replace
+        - name: replace
           args: ["\u0413\u0411", "GB"]
-        - name: re_replace
-          args: ["\u041c\u0411", "MB"]
-        - name: re_replace
-          args: ["\u041a\u0411", "KB"]
+        - name: replace
+          args: ["\u041C\u0411", "MB"]
+        - name: replace
+          args: ["\u041A\u0411", "KB"]
     seeders:
       selector: td:nth-child(5)
     leechers:
       selector: td:nth-child(6)
+    # dates come in four flavours:
     date_day:
+      # now
+      # Today 09:10
+      # Yesterday 13:04
       selector: td:nth-child(7):not(:contains("."))
+      # auto adjusted by site account profile
       optional: true
       filters:
-        # Unicode-реплейс кириллицы в датах
-        - name: re_replace
-          args: [" \u0432", ""]
-        - name: re_replace
+        - name: replace
+          args: ["\u0432 ", ""]
+        - name: replace
           args: ["\u0441\u0435\u0439\u0447\u0430\u0441", "now"]
-        - name: re_replace
-          args: ["\u0441\u0435\u0433\u043e\u0434\u043d\u044f", "Today"]
-        - name: re_replace
+        - name: replace
+          args: ["\u0441\u0435\u0433\u043E\u0434\u043D\u044F", "Today"]
+        - name: replace
           args: ["\u0432\u0447\u0435\u0440\u0430", "Yesterday"]
     date_year:
+      # 24.10.2017 at 23:44
       selector: td:nth-child(7):contains(".")
+      # auto adjusted by site account profile
       optional: true
       filters:
-        - name: re_replace
-          args: [" \u0432", ""]
+        - name: replace
+          args: ["\u0432 ", ""]
         - name: dateparse
           args: "dd.MM.yyyy HH:mm"
     date:
@@ -198,3 +236,4 @@ search:
       text: 1
     minimumratio:
       text: 1.0
+# engine n/a
