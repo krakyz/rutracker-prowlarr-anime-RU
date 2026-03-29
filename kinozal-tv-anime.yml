@@ -106,7 +106,7 @@ search:
         # 1. МАСТЕР-ФИЛЬТР (С поддержкой диапазонов лет, например 2025-2026)
         - name: re_replace
           args:
-            - '^(?<rus>[^/]+?)\s*(?:\(\s*(?:(?<season>\d+)(?:-(?<seasonTo>\d+))?\s*\u0441\u0435\u0437\u043E\u043D[\u044B\u0430]?)?(?:[^)]*?[\u0427\u0447]\u0430\u0441\u0442[\u044C\u0438]\s*(?<part>\d+(?:-\d+)?))?(?:[^)]*?(?<epFrom>\d+)(?:-(?<epTo>\d+))?\s*\u0441\u0435\u0440\u0438)?[^)]*\)\s*)?/\s*(?<romaji>[^/]+?)\s*/\s*(?<year>\d{4})(?<yearTo>-\d{4})?\s*/\s*(?<audioFeat>.*?)\s*/\s*(?<quality>[^/()]+?)(?:\s*\((?<res>\d+p|4K|2K|8K|\d{3,4}[pi])\))?\s*$'
+            - '^(?<rus>[^/]+?)\s*(?:\(\s*(?:(?<season>\d+)(?:-(?<seasonTo>\d+))?\s*\u0441\u0435\u0437\u043E\u043D[\u044B\u0430]?)?(?:[^)]*?[\u0427\u0447]\u0430\u0441\u0442[\u044C\u0438]\s*(?<part>\d+(?:-\d+)?))?(?:[^)]*?(?<epFrom>\d+)(?:-(?<epTo>\d+))?\s*\u0441\u0435\u0440\u0438)?[^)]*\)\s*)?/\s*(?<romaji>[^/]+?)\s*/\s*(?<year>\d{4})(?<yearTo>-\d{4})?\s*/\s*(?<audioFeat>.*?)\s*(?:/\s*(?<quality>[^/()]+?)(?:\s*\((?<res>\d+p|4K|2K|8K|\d{3,4}[pi]|AVC|HEVC)\)\s*)?)?$'
             - '${romaji} (${year}) S0${season}-S0${seasonTo}E--${epFrom}-${epTo} [${quality}-${res}] [${audioFeat}] -Kinozal'
 
         # 2. Очистка пустых диапазонов и несмаченных групп
@@ -121,8 +121,8 @@ search:
         - name: re_replace
           args: [ '\bS0-S0\b', '' ]
 
-        # !!! ИСПРАВЛЕННОЕ ПРАВИЛО !!!
         # Удаляем пустой блок эпизодов, только если там ЕСТЬ дефисы и НЕТ цифр
+        # Это защищает слова вроде "Eris" от удаления буквы E
         - name: re_replace
           args: [ '\bE-+(?!\d)\s*', '' ]
 
@@ -131,7 +131,6 @@ search:
           args: [ 'S0(\d{2,})', 'S$1' ] # S012 -> S12
 
         # 4. Нормализация эпизодов
-
         # Убираем висячий дефис в одиночной серии: "E--1-" -> "E--1"
         - name: re_replace
           args: [ 'E--(\d+)-(?!\d)', 'E--$1' ]
@@ -144,50 +143,33 @@ search:
         - name: re_replace
           args: [ '(?<=E\d{2}-)(\d)\b', '0$1' ]
 
-        # Форматируем: "E--1" -> "E01", "E--01-2" -> "E01-02"
-        - name: re_replace
-          args: [ 'E--', 'E' ]
-        - name: re_replace
-          args: [ 'E(\d)(?=-|\b|\s)', 'E0$1' ]
-        - name: re_replace
-          args: [ '(?<=E\d{2}-)(\d)\b', '0$1' ]
-
         # 5. Обработка Parts (Сплит-куров)
         - name: re_replace
-          args: [ '\s*\[PART:\d+-\d+\]', '' ] # Уничтожаем объединенные Part 1-2
+          args: [ '\s*\[PART:\d+-\d+\]', '' ]
         - name: re_replace
           args: [ '\[PART:(\d+)\]', ' - Part $1' ]
         - name: re_replace
-          args: [ '(?i)(Part\s*\d+)(?:\s*-\s*\1|\s+\1)', '$1' ] # Удаление дублей
+          args: [ '(?i)(Part\s*\d+)(?:\s*-\s*\1|\s+\1)', '$1' ]
         - name: re_replace
-          args: [ '(?i)\s*-\s*Part\s*1\b', '' ] # Скрываем Part 1 для Sonarr
+          args: [ '(?i)\s*-\s*Part\s*1\b', '' ]
 
         # 6. Fallback-страховка для сезонов
         # OVA / Movie / Specials -> S00
         - name: re_replace
           args: [ '^(?i)(?!.*S\d+)(?!.*?(?:TV|\u0422\u0412)\s*\+)(?=.*?(?:OVA|OAD|Special|\u0421\u043F\u0435\u0448\u043B|Movie|\u0424\u0438\u043B\u044C\u043C|SP\b))(.+?)\s+(E\d+)', '$1 S00$2' ]
-        # TV -> S01
+        # TV -> S01 (если сезона не было в заголовке, но есть серии)
         - name: re_replace
           args: [ '^(?!.*S\d+)(.+?)\s+(E\d+)', '$1 S01$2' ]
 
-#        # 7. БЕЗЖАЛОСТНАЯ ЗАЧИСТКА КИРИЛЛИЦЫ В ХВОСТЕ
-#        - name: re_replace
-#          args: [ '\p{IsCyrillic}+', '' ]
-
-        # 8. Уборка мусорной пунктуации из хвоста после зачистки кириллицы
+        # 7. Финальная уборка мусора
         - name: re_replace
-          args: [ '\(\s*[/,-]+\s*', '(' ]
+          args: [ '\[\s*-\s*\]', '' ] # Убирает пустые блоки [-]
         - name: re_replace
-          args: [ '\s*[/,-]+\s*\)', ')' ]
+          args: [ '\(\s*\)', '' ]
         - name: re_replace
-          args: [ '\s+[/,-]+\s+', ' ' ]
-        - name: re_replace
-          args: [ '\(\s*\)', '' ] # Стираем пустые скобки
-        - name: re_replace
-          args: [ '\[\s+\]', '' ]
+          args: [ '\[\s*\]', '' ]
         - name: re_replace
           args: [ '\s{2,}', ' ' ]
-
         - name: trim
     details:
       selector: td.nam a[href^="/details.php?"]
