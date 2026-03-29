@@ -16,7 +16,6 @@ legacylinks:
 caps:
   categorymappings:
     - {id: 20, cat: TV/Anime, desc: "Cartoons - Anime"}
-    - {id: 20, cat: TV/Season, desc: "Anime Seasons"}
 
   modes:
     search: [q]
@@ -104,60 +103,67 @@ search:
     title:
       selector: td.nam a[href^="/details.php?"]
       filters:
-        # 1. МАСТЕР-ФИЛЬТР (С поддержкой диапазонов лет, например 2025-2026)
+        # 1. МАСТЕР-ФИЛЬТР
+        # Захватываем "Часть/Части", диапазон лет и общее кол-во серий (epMax)
         - name: re_replace
           args:
-            - '^(?<rus>[^/]+?)\s*(?:\(\s*(?:(?<season>\d+)(?:-(?<seasonTo>\d+))?\s*\u0441\u0435\u0437\u043E\u043D[\u044B\u0430]?)?(?:[^)]*?[\u0427\u0447]\u0430\u0441\u0442[\u044C\u0438]\s*(?<part>\d+(?:-\d+)?))?(?:[^)]*?(?<epFrom>\d+)(?:-(?<epTo>\d+))?\s*\u0441\u0435\u0440\u0438)?[^)]*\)\s*)?/\s*(?<romaji>[^/]+?)\s*/\s*(?<year>\d{4})(?<yearTo>-\d{4})?\s*/\s*(?<audioFeat>.*?)\s*(?:/\s*(?<quality>[^/()]+?)(?:\s*\((?<res>\d+p|4K|2K|8K|\d{3,4}[pi]|AVC|HEVC)\)\s*)?)?$'
-            - '${romaji} (${year}) S0${season}-S0${seasonTo}E--${epFrom}-${epTo} [${quality}-${res}] [${audioFeat}] -Kinozal'
+            - '^(?<rus>[^/]+?)\s*(?:\(\s*(?:(?<season>\d+)(?:-(?<seasonTo>\d+))?\s*\u0441\u0435\u0437\u043E\u043D[\u044B\u0430]?)?(?:[^)]*?(?<isPart>[\u0427\u0447]\u0430\u0441\u0442[\u0438\u044C\u0438])\s*(?<part>\d+(?:-\d+)?))?(?:[^)]*?(?<epFrom>\d+)(?:-(?<epTo>\d+))?\s*\u0441\u0435\u0440\u0438(?:[^)]*?\u0438\u0437\s+(?<epMax>\d+))?)?[^)]*\)\s*)?/\s*(?<romaji>[^/]+?)\s*/\s*(?<year>\d{4}(?:-\d{4})?)\s*/\s*(?<audioFeat>.*?)\s*(?:/\s*(?<quality>[^/()]+?)(?:\s*\((?<res>\d+p|4K|2K|8K|\d{3,4}[pi]|AVC|HEVC)\)\s*)?)?$'
+            #- '${romaji} [P:${part}] [HASPART:${isPart}] (${year}) S0${season}-S0${seasonTo} E--${epFrom}-${epTo}-MAX${epMax} [${quality}-${res}] [${audioFeat}] -Kinozal'
+            - '${romaji} [HASPART:${isPart}] S0${season}-S0${seasonTo} E--${epFrom}-${epTo}-MAX${epMax} [${quality}-${res}] [${audioFeat}] -Kinozal'
 
-        # 2. Обработка Season Pack (НОВЫЙ ЭТАП)
-        # Если epFrom=1 и epTo совпадает с количеством серий в сезоне (через логику Sonarr или если цифры равны)
-        # На Кинозале часто нет пометки "из Х", поэтому мы просто проверяем наличие диапазона.
-        # Если ты хочешь, чтобы ПРИНУДИТЕЛЬНО удалялись серии только в полных паках, используем маркер:
+        # 2. ПРЕД-ОБРАБОТКА ЭПИЗОДОВ
+        # Фикс одиночного числа (12 серий -> 1-12)
         - name: re_replace
-          args: [ 'E--1-(\d+)', 'E--1-$1-MAX$1' ]
+          args: [ 'E--(\d+)--MAX(\d+)', 'E--1-$1-MAX$2' ]
+        - name: re_replace
+          args: [ 'E--(\d+)-MAX(?!\d)', 'E--1-$1' ]
 
-        # Если цифры совпали (полный сезон), удаляем блок E
+        # 3. УДАЛЕНИЕ ЭПИЗОДОВ ДЛЯ SEASON PACK
+        # УСЛОВИЕ: Удаляем ТОЛЬКО если маркер [HASPART:] пустой.
+        # Если в релизе есть слово "Часть" или "Части", этот шаг будет пропущен.
         - name: re_replace
-          args: [ 'E--1-(\d+)-MAX\1', '' ]
+          args: [ '\[HASPART:\]\s+(.*?)\s+E--1-(\d+)-MAX\2(?=\s|\[|$)', '$1' ]
 
-        # Чистим временный маркер MAX для недогруженных сезонов
+        # Чистим временные маркеры
         - name: re_replace
-          args: [ '-MAX\d+', '' ]
+          args: [ '-MAX\d*', '' ]
+        - name: re_replace
+          args: [ '\[HASPART:.*?\]\s*', '' ]
 
-        # 3. Базовая очистка (Из твоего файла)
+        # 4. ПОСТ-ОБРАБОТКА СЕЗОНОВ И ЭПИЗОДОВ
         - name: re_replace
-          args: [ 'S0(\d+)-S0(?=[E\s]|$)', 'S0$1' ] # S01-S0 -> S01
+          args: [ 'S0(\d+)-S0(?=[E\s\[]|$)', 'S0$1' ]
         - name: re_replace
-          args: [ '\bS0-S0\b', '' ] #
+          args: [ '\bS0-S0\b', '' ]
         - name: re_replace
-          args: [ '\bE-+(?!\d)\s*', '' ] # Защита Eris
+          args: [ 'S0(\d{2,})', 'S$1' ]
 
-        # 4. Фикс нулей и нормализация (ВАЖНО для качества)
+        # Форматируем эпизоды: E--1-24 -> E01-24
         - name: re_replace
-          args: [ 'S0(\d{2,})', 'S$1' ] # S012 -> S12
+          args: [ 'E--(\d+)-(\d+)', 'E$1-$2' ]
         - name: re_replace
-          args: [ 'E--(\d+)-(?!\d)', 'E--$1' ] # E--1- -> E--1
+          args: [ 'E--', 'E' ]
         - name: re_replace
-          args: [ 'E--', 'E' ] #
+          args: [ 'E(\d)(?=-|\b|\s)', 'E0$1' ]
         - name: re_replace
-          args: [ 'E(\d)(?=-|\b|\s)', 'E0$1' ] # E1 -> E01
+          args: [ '(?<=E\d{2}-)(\d)\b', '0$1' ]
         - name: re_replace
-          args: [ '(?<=E\d{2}-)(\d)\b', '0$1' ] # E01-2 -> E01-02
+          args: [ '\bE-+(?!\d)\s*', '' ]
 
-        # 5. Обработка Parts и Сплит-куров (Сохраняем полностью)
-        - name: re_replace
-          args: [ '\s*\[PART:\d+-\d+\]', '' ] #
-        - name: re_replace
-          args: [ '\[PART:(\d+)\]', ' - Part $1' ] #
-        - name: re_replace
-          args: [ '(?i)(Part\s*\d+)(?:\s*-\s*\1|\s+\1)', '$1' ] #
-        - name: re_replace
-          args: [ '(?i)\s*-\s*Part\s*1\b', '' ] #
+        # 5. ОФОРМЛЕНИЕ PART ПЕРЕД ГОДОМ
+        #- name: re_replace
+        #  args: [ '\[P:(\d+(?:-\d+)?)\]', 'Part $1' ]
+        #- name: re_replace
+        #  args: [ '\[P:\]\s*', '' ]
 
-        # 6. Fallback (OVA/Movie)
+        # Показываем год только для S01
+        #- name: re_replace
+        #  args: [ '\((\d{4}(?:-\d{4})?)\)(?!\s*S01\b)', '' ]
+
+        # 6. ФИНАЛЬНАЯ ОЧИСТКА
         - name: re_replace
-          args: [ '^(?i)(?!.*S\d+)(?!.*?(?:TV|\u0422\u0412)\s*\+)(?=.*?(?:OVA|OAD|Special|\u0421\u043F\u0435\u0448\u043B|Movie|\u0424\u0438\u043B\u044C\u043C|SP\b))(.+?)\s+(E\d+)', '$1 S00$2' ] #
+          args: [ '\s{2,}', ' ' ]
+        - name: trim
 
     details:
       selector: td.nam a[href^="/details.php?"]
